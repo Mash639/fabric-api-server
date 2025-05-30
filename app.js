@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+'use strict';
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const grpc = require('@grpc/grpc-js');
@@ -21,7 +23,8 @@ app.use(bodyParser.json());
 
 // --- Fabric Connection Configuration ---
 const channelName = envOrDefault('CHANNEL_NAME', 'mychannel');
-const chaincodeName = envOrDefault('CHAINCODE_NAME', 'basic'); // Ensure this matches your deployed chaincode name
+// Ensure this matches your deployed chaincode name.
+const chaincodeName = envOrDefault('CHAINCODE_NAME', 'basic');
 
 // Define paths for Org1, Org2, Org3 crypto materials
 // IMPORTANT: These paths are relative to where your 'test-network' is located.
@@ -84,7 +87,6 @@ async function newGrpcConnection(
     orgPeerEndpoint,
     orgPeerHostAlias
 ) {
-    // Corrected line: Use orgPeerHostAlias directly to construct the path to the peer's TLS cert
     const tlsCertPath = path.resolve(
         orgCryptoPath,
         'peers',
@@ -148,12 +150,28 @@ function envOrDefault(key, defaultValue) {
     return process.env[key] || defaultValue;
 }
 
+// Define constants for your user types (these match what you use in `userType` in requests)
+const USER_TYPE_SUPPLIER = 'supplier';
+const USER_TYPE_TRANSPORTER = 'transporter';
+const USER_TYPE_AGRODEALER = 'agrodealer';
+
+// Define constants for the MSP IDs (these must match your Fabric network setup)
+const ORG1_MSP_ID = 'Org1MSP';
+const ORG2_MSP_ID = 'Org2MSP';
+const ORG3_MSP_ID = 'Org3MSP';
+
+// Define constants for the ADMIN user identities, which are automatically generated
+// when you bring up the test-network
+const ORG1_ADMIN_IDENTITY = 'Admin@org1.example.com';
+const ORG2_ADMIN_IDENTITY = 'Admin@org2.example.com';
+const ORG3_ADMIN_IDENTITY = 'Admin@org3.example.com';
+
 /**
  * Main function to connect to Fabric Gateway and get a contract instance based on user's organization.
  * This function will establish a new connection for each request for simplicity,
  * but for production, you might want to manage a pool of connections or a single shared connection per organization.
  *
- * @param {string} userType Indicates which organization's user and crypto materials to use ('supplier', 'transporter', 'agrodealer').
+ * @param {string} userType Indicates which organization's admin user and crypto materials to use ('supplier', 'transporter', 'agrodealer').
  * @returns {Promise<{contract: import('@hyperledger/fabric-gateway').Contract, gateway: import('@hyperledger/fabric-gateway').Gateway}>} The Fabric contract and gateway instances.
  * @throws {Error} If connection fails or userType is invalid.
  */
@@ -161,81 +179,82 @@ async function getFabricContract(userType) {
     let cryptoPath,
         keyDirectoryPath,
         certDirectoryPath,
-        tlsCertPath,
         peerEndpoint,
         peerHostAlias,
-        userMspId;
+        userMspId,
+        userIdentityName;
 
     switch (userType.toLowerCase()) {
-        case 'supplier':
-            userMspId = 'Org1MSP'; // Adjust if your Supplier's MSP ID is different
+        case USER_TYPE_SUPPLIER:
+            userMspId = ORG1_MSP_ID;
+            userIdentityName = ORG1_ADMIN_IDENTITY; // Using Org1 Admin
             cryptoPath = cryptoPathOrg1;
             keyDirectoryPath = path.resolve(
                 cryptoPath,
                 'users',
-                'User1@org1.example.com',
+                userIdentityName,
                 'msp',
                 'keystore'
             );
             certDirectoryPath = path.resolve(
                 cryptoPath,
                 'users',
-                'User1@org1.example.com',
+                userIdentityName,
                 'msp',
                 'signcerts'
             );
-            // tlsCertPath will be resolved within newGrpcConnection
             peerEndpoint = peerEndpointOrg1;
             peerHostAlias = 'peer0.org1.example.com';
             break;
-        case 'transporter':
-            userMspId = 'Org2MSP'; // Adjust if your Transporter's MSP ID is different
+        case USER_TYPE_TRANSPORTER:
+            userMspId = ORG2_MSP_ID;
+            userIdentityName = ORG2_ADMIN_IDENTITY; // Using Org2 Admin
             cryptoPath = cryptoPathOrg2;
             keyDirectoryPath = path.resolve(
                 cryptoPath,
                 'users',
-                'User1@org2.example.com',
+                userIdentityName,
                 'msp',
                 'keystore'
-            ); // Assuming User1 in Org2
+            );
             certDirectoryPath = path.resolve(
                 cryptoPath,
                 'users',
-                'User1@org2.example.com',
+                userIdentityName,
                 'msp',
                 'signcerts'
-            ); // Assuming User1 in Org2
-            // tlsCertPath will be resolved within newGrpcConnection
+            );
             peerEndpoint = peerEndpointOrg2;
             peerHostAlias = 'peer0.org2.example.com';
             break;
-        case 'agrodealer':
-            userMspId = 'Org3MSP'; // Adjust if your Agrodealer's MSP ID is different
+        case USER_TYPE_AGRODEALER:
+            userMspId = ORG3_MSP_ID;
+            userIdentityName = ORG3_ADMIN_IDENTITY; // Using Org3 Admin
             cryptoPath = cryptoPathOrg3;
             keyDirectoryPath = path.resolve(
                 cryptoPath,
                 'users',
-                'User1@org3.example.com',
+                userIdentityName,
                 'msp',
                 'keystore'
-            ); // Assuming User1 in Org3
+            );
             certDirectoryPath = path.resolve(
                 cryptoPath,
                 'users',
-                'User1@org3.example.com',
+                userIdentityName,
                 'msp',
                 'signcerts'
-            ); // Assuming User1 in Org3
-            // tlsCertPath will be resolved within newGrpcConnection
+            );
             peerEndpoint = peerEndpointOrg3;
             peerHostAlias = 'peer0.org3.example.com';
             break;
         default:
             throw new Error(
-                `Invalid user type: ${userType}. Must be 'supplier', 'transporter', or 'agrodealer'.`
+                `Invalid user type: ${userType}. Must be '${USER_TYPE_SUPPLIER}', '${USER_TYPE_TRANSPORTER}', or '${USER_TYPE_AGRODEALER}'.`
             );
     }
 
+    // CORRECTED LINE: Pass the necessary arguments to newGrpcConnection
     const client = await newGrpcConnection(
         cryptoPath,
         peerEndpoint,
@@ -273,6 +292,7 @@ app.get('/', (req, res) => {
 /**
  * Initialize Ledger (usually run once for setup)
  * This operation can be performed by any authorized user, e.g., 'supplier'.
+ * This will now call the InitLedger from your AssetTransfer chaincode.
  * Request Body:
  * { "userType": "supplier" }
  */
@@ -290,7 +310,9 @@ app.post('/api/init-ledger', async (req, res) => {
         gateway = gw;
         console.log(`\n--> API Call: InitLedger by ${userType}`);
         await contract.submitTransaction('InitLedger');
-        res.status(200).json({ message: 'Ledger initialized successfully' });
+        res.status(200).json({
+            message: 'Ledger initialized successfully with sample assets.',
+        });
     } catch (error) {
         console.error(`Failed to initialize ledger for ${userType}:`, error);
         res.status(500).json({ error: error.message });
@@ -300,7 +322,8 @@ app.post('/api/init-ledger', async (req, res) => {
 });
 
 /**
- * 1. Supplier initiates a new delivery and registers a new fertilizer unit.
+ * Supplier initiates a new delivery and registers a new fertilizer unit.
+ * Uses Chaincode: InitDeliveryWithFertilizer
  *
  * Request Body:
  * {
@@ -309,8 +332,7 @@ app.post('/api/init-ledger', async (req, res) => {
  * "fertilizerId": "F001",
  * "productType": "UREA",
  * "quantity": 50,
- * "agrodealerOrg": "Org3MSP",
- * "agrodealerId": "x509::CN=User1@org3.example.com::L=Nairobi..."
+ * "agrodealerOrg": "Org3MSP" // Only MSP ID needed now
  * }
  */
 app.post('/api/delivery/initiate', async (req, res) => {
@@ -320,8 +342,7 @@ app.post('/api/delivery/initiate', async (req, res) => {
         fertilizerId,
         productType,
         quantity,
-        agrodealerOrg,
-        agrodealerId,
+        agrodealerOrg, // This is the MSP ID for the target agrodealer
     } = req.body;
 
     if (
@@ -330,8 +351,7 @@ app.post('/api/delivery/initiate', async (req, res) => {
         !fertilizerId ||
         !productType ||
         !quantity ||
-        !agrodealerOrg ||
-        !agrodealerId
+        !agrodealerOrg
     ) {
         return res.status(400).json({ error: 'Missing required parameters.' });
     }
@@ -343,14 +363,14 @@ app.post('/api/delivery/initiate', async (req, res) => {
         console.log(
             `\n--> API Call: InitDeliveryWithFertilizer by ${userType}`
         );
+        // Note: 'quantity' is converted to string for chaincode consistency
         await contract.submitTransaction(
             'InitDeliveryWithFertilizer',
             deliveryId,
             fertilizerId,
             productType,
-            String(quantity), // Quantity is number in JS, but chaincode expects string
-            agrodealerOrg,
-            agrodealerId
+            String(quantity),
+            agrodealerOrg // Pass only the MSP ID, chaincode will resolve friendly name
         );
         res.status(200).json({
             message: `Delivery ${deliveryId} initiated and Fertilizer ${fertilizerId} registered successfully.`,
@@ -364,7 +384,8 @@ app.post('/api/delivery/initiate', async (req, res) => {
 });
 
 /**
- * 2. Supplier adds more fertilizers to an existing, INITIATED delivery.
+ * Supplier adds more fertilizers to an existing, INITIATED delivery.
+ * Uses Chaincode: AddFertilizerToDelivery
  *
  * Request Body:
  * {
@@ -413,29 +434,28 @@ app.post('/api/delivery/add-fertilizer', async (req, res) => {
 });
 
 /**
- * 3. Transfer a delivery from current owner (Supplier or Transporter) to the next owner.
+ * Transfer a delivery from current owner (Supplier or Transporter) to the next owner.
  * The `userType` in the request body should match the *current* owner initiating the transfer.
+ * Uses Chaincode: TransferDelivery
  *
  * Request Body (Supplier to Transporter):
  * {
  * "userType": "supplier",
  * "deliveryId": "D001",
- * "newOwnerOrg": "Org2MSP",
- * "newOwnerId": "x509::CN=User1@org2.example.com::L=Nairobi..."
+ * "newOwnerOrg": "Org2MSP"
  * }
  *
  * Request Body (Transporter to Agrodealer):
  * {
  * "userType": "transporter",
  * "deliveryId": "D001",
- * "newOwnerOrg": "Org3MSP",
- * "newOwnerId": "x509::CN=User1@org3.example.com::L=Nairobi..."
+ * "newOwnerOrg": "Org3MSP"
  * }
  */
 app.post('/api/delivery/transfer', async (req, res) => {
-    const { userType, deliveryId, newOwnerOrg, newOwnerId } = req.body;
+    const { userType, deliveryId, newOwnerOrg } = req.body;
 
-    if (!userType || !deliveryId || !newOwnerOrg || !newOwnerId) {
+    if (!userType || !deliveryId || !newOwnerOrg) {
         return res.status(400).json({ error: 'Missing required parameters.' });
     }
 
@@ -447,8 +467,7 @@ app.post('/api/delivery/transfer', async (req, res) => {
         await contract.submitTransaction(
             'TransferDelivery',
             deliveryId,
-            newOwnerOrg,
-            newOwnerId
+            newOwnerOrg // Pass only the MSP ID, chaincode will resolve friendly name
         );
         res.status(200).json({
             message: `Delivery ${deliveryId} transfer initiated to ${newOwnerOrg}.`,
@@ -462,8 +481,9 @@ app.post('/api/delivery/transfer', async (req, res) => {
 });
 
 /**
- * 4. The receiving party (Transporter or Agrodealer) accepts a delivery.
+ * The receiving party (Transporter or Agrodealer) accepts a delivery.
  * The `userType` in the request body should match the *accepting* party.
+ * Uses Chaincode: AcceptDelivery
  *
  * Request Body (Transporter Accepts):
  * {
@@ -516,8 +536,9 @@ app.post('/api/delivery/accept', async (req, res) => {
 });
 
 /**
- * 5. Query Fertilizer History.
+ * Query Fertilizer History.
  * Any authorized user can query.
+ * Uses Chaincode: GetFertilizerHistory
  *
  * Query Parameters:
  * ?userType=supplier
@@ -556,6 +577,7 @@ app.get('/api/fertilizer/:fertilizerId/history', async (req, res) => {
 /**
  * Query a single Fertilizer.
  * Any authorized user can query.
+ * Uses Chaincode: ReadFertilizer
  *
  * Query Parameters:
  * ?userType=supplier
@@ -575,17 +597,16 @@ app.get('/api/fertilizer/:fertilizerId', async (req, res) => {
         const { contract, gateway: gw } = await getFabricContract(userType);
         gateway = gw;
         console.log(
-            `\n--> API Call: QueryFertilizer for ${fertilizerId} by ${userType}`
+            `\n--> API Call: ReadFertilizer for ${fertilizerId} by ${userType}`
         );
         const resultBytes = await contract.evaluateTransaction(
-            'QueryFertilizer',
+            'ReadFertilizer',
             fertilizerId
         );
         const resultJson = utf8Decoder.decode(resultBytes);
         res.status(200).json(JSON.parse(resultJson));
     } catch (error) {
         if (error.message.includes('does not exist')) {
-            // Specific error message from chaincode
             res.status(404).json({
                 error: `Fertilizer ${fertilizerId} not found.`,
             });
@@ -601,6 +622,7 @@ app.get('/api/fertilizer/:fertilizerId', async (req, res) => {
 /**
  * Query a single Delivery.
  * Any authorized user can query.
+ * Uses Chaincode: ReadDelivery
  *
  * Query Parameters:
  * ?userType=supplier
@@ -620,17 +642,16 @@ app.get('/api/delivery/:deliveryId', async (req, res) => {
         const { contract, gateway: gw } = await getFabricContract(userType);
         gateway = gw;
         console.log(
-            `\n--> API Call: QueryDelivery for ${deliveryId} by ${userType}`
+            `\n--> API Call: ReadDelivery for ${deliveryId} by ${userType}`
         );
         const resultBytes = await contract.evaluateTransaction(
-            'QueryDelivery',
+            'ReadDelivery',
             deliveryId
         );
         const resultJson = utf8Decoder.decode(resultBytes);
         res.status(200).json(JSON.parse(resultJson));
     } catch (error) {
         if (error.message.includes('does not exist')) {
-            // Specific error message from chaincode
             res.status(404).json({
                 error: `Delivery ${deliveryId} not found.`,
             });
@@ -646,6 +667,7 @@ app.get('/api/delivery/:deliveryId', async (req, res) => {
 /**
  * Query all fertilizers using a rich query.
  * Requires CouchDB.
+ * Uses Chaincode: QueryAllFertilizers
  *
  * Request Body:
  * {
@@ -686,6 +708,7 @@ app.post('/api/fertilizer/queryAll', async (req, res) => {
 /**
  * Query all deliveries using a rich query.
  * Requires CouchDB.
+ * Uses Chaincode: QueryAllDeliveries
  *
  * Request Body:
  * {
@@ -735,14 +758,12 @@ app.listen(port, async () => {
     console.log(`Org2 Peer Endpoint: ${peerEndpointOrg2}`);
     console.log(`Org3 Peer Endpoint: ${peerEndpointOrg3}`);
     console.log(
-        'Ensure crypto materials (private keys and certificates) are available at specified paths.'
+        'Using Admin users for simplified demonstration. Ensure Admin crypto materials are available at specified paths.'
     );
 });
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
     console.log('Shutting down server...');
-    // No need to close shared gateway/client if they are created per request.
-    // If you implemented connection pooling, you'd close the pool here.
     process.exit(0);
 });
